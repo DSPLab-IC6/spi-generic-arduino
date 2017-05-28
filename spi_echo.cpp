@@ -1,20 +1,26 @@
 #include <SPI.h>
 
-char buf [4];
-volatile byte pos;
-volatile boolean begin_procssing;
-volatile boolean process_it;
-volatile unsigned process_cnt;
+#define GET_REGISTER      0xDE
+#define SET_REGISTER      0xDB 
+
+static char registers[0xFF];
+static int command;
+static int reg_num; 
+
+enum states_protocol {
+    processing,
+    cmd,
+    reg,
+    value
+};
+states_protocol state = processing;
 
 void setup (void) {
     pinMode(MISO, OUTPUT);
     SPCR |= _BV(SPE);
 
-    pos = 0;
-    process_it = false;
-    process_cnt = 0;
-    for (byte i = 0; i<4; i++) {
-        buf[i] = 0;
+    for (int i = 0; i<0xFF; i++) {
+        registers[i] = 0;
     }
 
     SPI.attachInterrupt();
@@ -23,29 +29,35 @@ void setup (void) {
 
 // SPI interrupt routine
 ISR (SPI_STC_vect) {
-    if (SPDR == 0xFA && !begin_procssing) {
-        begin_procssing = true;
-        goto exit;
-    }
-
-    if (begin_procssing) {
-        if (!process_it) {
-            buf[pos++] = SPDR;
-        }
-        if (pos == 2) {
-            pos = 0;
-            process_it = !process_it;
-        }
-        if (process_it) {
-            SPDR = buf[pos++];
-        }
-        if (++process_cnt >= 4) {
-            begin_procssing = false;
-            process_cnt = 0;
-        }
-    }
-exit:
-    __asm__ __volatile__("nop");
+    switch (state) {
+        case processing:
+            if (SPDR == 0xFA)
+                state = cmd;
+            break;
+        case cmd:
+            command = SPDR;
+            state = reg;
+            break;
+        case reg:
+            reg_num = SPDR;
+            state = value; 
+            switch (command) {
+                case GET_REGISTER:
+                    SPDR = registers[reg_num];
+                    break;
+            }
+            break;
+        case value:
+            state = processing;
+            switch (command) {
+                case SET_REGISTER:
+                    registers[reg_num] = SPDR;
+                    break;
+            }
+            break;
+    };
+//exit:
+//    __asm__ __volatile__("nop");
 }
 
 void loop (void)
