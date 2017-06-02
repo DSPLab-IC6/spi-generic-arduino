@@ -3,9 +3,9 @@
 #define GET_REGISTER      0xDE
 #define SET_REGISTER      0xDB 
 
-static char registers[0xFF];
-static int command;
-static int reg_num; 
+volatile static char registers[0xFF];
+volatile static int command;
+volatile static int reg_num; 
 
 enum states_protocol {
     processing,
@@ -13,9 +13,11 @@ enum states_protocol {
     reg,
     value
 };
-states_protocol state = processing;
+volatile states_protocol state;
 
 void setup (void) {
+    state = processing;
+
     pinMode(MISO, OUTPUT);
     SPCR |= _BV(SPE);
 
@@ -31,8 +33,12 @@ void setup (void) {
 ISR (SPI_STC_vect) {
     switch (state) {
         case processing:
-            if (SPDR == 0xFA)
+            if (SPDR == 0xFA) {
                 state = cmd;
+                for (int i = 0; i<0x04; i++) {
+                    registers[i] = 0x00;
+                }
+            }
             break;
         case cmd:
             command = SPDR;
@@ -56,12 +62,21 @@ ISR (SPI_STC_vect) {
             }
             break;
     };
-//exit:
-//    __asm__ __volatile__("nop");
 }
 
 void loop (void)
 {
-    
+/*    switch (state) {
+        case cmd:
+            Serial.println("cmd");
+            break;
+        case reg:
+            Serial.println("reg");
+            break;
+        case value:
+            Serial.println("val");
+            break;
+    };
+*/
 }
 
